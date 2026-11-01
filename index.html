@@ -1,0 +1,768 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Hydroponics Monitor</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+
+:root {
+  --green: #16a34a;
+  --red: #dc2626;
+  --blue: #2563eb;
+  --bg: #f1f5f9;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 20px;
+  background: var(--bg);
+  font-family: Arial, sans-serif;
+  color: var(--text);
+}
+
+.container {
+  max-width: 1100px;
+  margin: auto;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 25px;
+}
+
+h1 {
+  margin: 0;
+  color: #166534;
+  font-size: 25px;
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 7px;
+}
+
+.connection {
+  background: #dcfce7;
+  color: #166534;
+  padding: 9px 13px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.connection.offline {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.card {
+  background: var(--card);
+  padding: 22px;
+  border-radius: 15px;
+  box-shadow: 0 3px 12px #00000008;
+}
+
+.metric-title {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.metric-value {
+  font-size: 38px;
+  font-weight: bold;
+  margin: 15px 0;
+}
+
+.metric-unit {
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.status {
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.good {
+  color: var(--green);
+}
+
+.bad {
+  color: var(--red);
+}
+
+.neutral {
+  color: var(--muted);
+}
+
+.alert {
+  display: none;
+  padding: 14px;
+  border-radius: 10px;
+  margin: 18px 0;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.alert.warning {
+  display: block;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.alert.normal {
+  display: block;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.chart-card {
+  background: white;
+  padding: 20px;
+  border-radius: 15px;
+  min-width: 0;
+}
+
+.chart-card h3 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+.chart-container {
+  position: relative;
+  height: 260px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+button {
+  background: #166534;
+  color: white;
+  border: none;
+  padding: 11px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #475569;
+}
+
+.footer {
+  text-align: center;
+  margin-top: 25px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media(max-width: 700px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-value {
+    font-size: 32px;
+  }
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<header>
+
+<div>
+<h1>AGRIVENTSURE HYDROPONICS MONITOR</h1>
+<div class="subtitle">
+Smart Water Quality Monitoring System
+</div>
+</div>
+
+<div id="connection" class="connection offline">
+CONNECTING...
+</div>
+
+</header>
+
+<!-- ALERTS -->
+
+<div id="alertBox" class="alert">
+Waiting for sensor readings...
+</div>
+
+<!-- LIVE SENSOR READINGS -->
+
+<div class="grid">
+
+<div class="card">
+
+<div class="metric-title">pH Level</div>
+
+<div class="metric-value" id="ph">
+--
+</div>
+
+<div id="phStatus" class="status neutral">
+Waiting for data
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="metric-title">TDS</div>
+
+<div class="metric-value">
+<span id="tds">--</span>
+<span class="metric-unit">ppm</span>
+</div>
+
+<div id="tdsStatus" class="status neutral">
+Waiting for data
+</div>
+
+</div>
+
+<div class="card">
+
+<div class="metric-title">Water Temperature</div>
+
+<div class="metric-value">
+<span id="temp">--</span>
+<span class="metric-unit">°C</span>
+</div>
+
+<div id="tempStatus" class="status neutral">
+Waiting for data
+</div>
+
+</div>
+
+</div>
+
+<!-- CONTROLS -->
+
+<div class="controls">
+
+<button onclick="refreshData()">
+Refresh Now
+</button>
+
+<button class="secondary" onclick="enableNotifications()">
+Enable Alerts
+</button>
+
+<button class="secondary" onclick="downloadCSV()">
+Download CSV
+</button>
+
+</div>
+
+<!-- HISTORICAL GRAPHS -->
+
+<div class="chart-grid">
+
+<div class="chart-card">
+
+<h3>Historical pH Readings</h3>
+
+<div class="chart-container">
+<canvas id="phChart"></canvas>
+</div>
+
+</div>
+
+<div class="chart-card">
+
+<h3>Historical TDS Readings</h3>
+
+<div class="chart-container">
+<canvas id="tdsChart"></canvas>
+</div>
+
+</div>
+
+<div class="chart-card">
+
+<h3>Water Temperature History</h3>
+
+<div class="chart-container">
+<canvas id="tempChart"></canvas>
+</div>
+
+</div>
+
+<div class="chart-card">
+
+<h3>System Information</h3>
+
+<p>Last update:</p>
+<strong id="lastUpdate">--</strong>
+
+<p>Historical records:</p>
+<strong id="recordCount">0</strong>
+
+<p>pH target: 5.5–6.5</p>
+<p>TDS target: 560–840 ppm</p>
+
+</div>
+
+</div>
+
+<div class="footer">
+ESP32 Hydroponics Monitoring System
+<br>
+Cloud-powered sensor monitoring
+</div>
+
+</div>
+
+<script>
+
+// ======================================
+// THINGSPEAK CONFIGURATION
+// ======================================
+
+// Replace with your actual channel ID.
+
+const CHANNEL_ID = "3561244";
+
+// Public channel: leave this blank.
+// Private channel: enter the Read API Key.
+
+const READ_API_KEY = "";
+
+// ======================================
+// TARGET RANGES
+// ======================================
+
+const PH_MIN = 5.5;
+const PH_MAX = 6.5;
+
+const TDS_MIN = 560;
+const TDS_MAX = 840;
+
+// ======================================
+// ALERT SETTINGS
+// ======================================
+
+let lastAlertState = "";
+
+let latestFeeds = [];
+
+// ======================================
+// CHART CONFIGURATION
+// ======================================
+
+function createChart(id, label, color) {
+
+  return new Chart(
+    document.getElementById(id),
+    {
+      type: "line",
+
+      data: {
+        labels: [],
+
+        datasets: [{
+          label: label,
+          data: [],
+          borderColor: color,
+          backgroundColor: color + "22",
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2
+        }]
+      },
+
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+
+        interaction: {
+          intersect: false,
+          mode: "index"
+        },
+
+        plugins: {
+          legend: {
+            display: true
+          }
+        },
+
+        scales: {
+          x: {
+            ticks: {
+              maxTicksLimit: 6
+            }
+          }
+        }
+      }
+    }
+  );
+}
+
+const phChart =
+  createChart("phChart", "pH", "#16a34a");
+
+const tdsChart =
+  createChart("tdsChart", "TDS (ppm)", "#2563eb");
+
+const tempChart =
+  createChart("tempChart", "Temperature (°C)", "#ea580c");
+
+// ======================================
+// STATUS FUNCTIONS
+// ======================================
+
+function setStatus(id, message, good) {
+
+  const element = document.getElementById(id);
+
+  element.innerText = message;
+
+  element.className =
+    "status " + (good ? "good" : "bad");
+}
+
+// ======================================
+// NOTIFICATIONS
+// ======================================
+
+async function enableNotifications() {
+
+  if (!("Notification" in window)) {
+
+    alert("Browser notifications are not supported.");
+
+    return;
+  }
+
+  const permission =
+    await Notification.requestPermission();
+
+  if (permission === "granted") {
+
+    alert("Hydroponics alerts enabled!");
+
+  } else {
+
+    alert("Notification permission was not granted.");
+  }
+}
+
+function checkAlerts(ph, tds) {
+
+  let alerts = [];
+
+  if (ph < PH_MIN) alerts.push("pH is LOW");
+  if (ph > PH_MAX) alerts.push("pH is HIGH");
+
+  if (tds < TDS_MIN) alerts.push("TDS is LOW");
+  if (tds > TDS_MAX) alerts.push("TDS is HIGH");
+
+  const state = alerts.join(" | ");
+
+  const box = document.getElementById("alertBox");
+
+  if (alerts.length > 0) {
+
+    box.className = "alert warning";
+
+    box.innerText = "WARNING: " + state;
+
+  } else {
+
+    box.className = "alert normal";
+
+    box.innerText = "Water readings are within target ranges.";
+  }
+
+  if (
+    state !== lastAlertState &&
+    state !== "" &&
+    Notification.permission === "granted"
+  ) {
+
+    new Notification("Hydroponics Water Alert", {
+      body: state
+    });
+  }
+
+  lastAlertState = state;
+}
+
+// ======================================
+// UPDATE LIVE VALUES
+// ======================================
+
+function updateDashboard(feed) {
+
+  const ph = Number(feed.field1);
+  const tds = Number(feed.field2);
+  const temp = Number(feed.field3);
+
+  if (
+    !Number.isFinite(ph) ||
+    !Number.isFinite(tds) ||
+    !Number.isFinite(temp)
+  ) {
+    throw new Error("Invalid sensor data");
+  }
+
+  document.getElementById("ph").innerText =
+    ph.toFixed(2);
+
+  document.getElementById("tds").innerText =
+    tds.toFixed(0);
+
+  document.getElementById("temp").innerText =
+    temp.toFixed(1);
+
+  setStatus(
+    "phStatus",
+    ph >= PH_MIN && ph <= PH_MAX ?
+    "OPTIMAL" : ph < PH_MIN ? "LOW" : "HIGH",
+    ph >= PH_MIN && ph <= PH_MAX
+  );
+
+  setStatus(
+    "tdsStatus",
+    tds >= TDS_MIN && tds <= TDS_MAX ?
+    "OPTIMAL" : tds < TDS_MIN ? "LOW" : "HIGH",
+    tds >= TDS_MIN && tds <= TDS_MAX
+  );
+
+  setStatus(
+    "tempStatus",
+    "SENSOR DATA RECEIVED",
+    true
+  );
+
+  checkAlerts(ph, tds);
+
+  const time = new Date(feed.created_at);
+
+  document.getElementById("lastUpdate").innerText =
+    time.toLocaleString("en-PH", {
+      timeZone: "Asia/Manila"
+    });
+
+}
+
+// ======================================
+// HISTORICAL CHARTS
+// ======================================
+
+function updateCharts(feeds) {
+
+  const validFeeds = feeds.filter(feed =>
+    Number.isFinite(Number(feed.field1)) &&
+    Number.isFinite(Number(feed.field2)) &&
+    Number.isFinite(Number(feed.field3)) &&
+    Number(feed.field3) > -55 &&
+    Number(feed.field3) <= 125
+  );
+
+  const labels = validFeeds.map(feed =>
+    new Date(feed.created_at).toLocaleString(
+      "en-PH",
+      {
+        timeZone: "Asia/Manila",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      }
+    )
+  );
+
+  function updateChart(chart, field) {
+
+    chart.data.labels = labels;
+
+    chart.data.datasets[0].data =
+      validFeeds.map(feed => Number(feed[field]));
+
+    chart.update();
+  }
+
+  updateChart(phChart, "field1");
+  updateChart(tdsChart, "field2");
+  updateChart(tempChart, "field3");
+
+  document.getElementById("recordCount").innerText =
+    validFeeds.length;
+}
+
+// ======================================
+// FETCH CLOUD DATA
+// ======================================
+
+async function refreshData() {
+
+  const connection =
+    document.getElementById("connection");
+
+  try {
+
+    let url =
+      `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds.json?results=100`;
+
+    if (READ_API_KEY) {
+
+      url += `&api_key=${READ_API_KEY}`;
+    }
+
+    const response = await fetch(url, {
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+
+      throw new Error("Cloud connection failed");
+    }
+
+    const data = await response.json();
+
+    if (!data.feeds || data.feeds.length === 0) {
+
+      throw new Error("No sensor data available");
+    }
+
+    latestFeeds = data.feeds;
+
+    // Latest reading
+    const latest =
+      latestFeeds[latestFeeds.length - 1];
+
+    updateDashboard(latest);
+
+    // Historical charts
+    updateCharts(latestFeeds);
+
+    // Check if data is stale
+    const age =
+      Date.now() - new Date(latest.created_at).getTime();
+
+    if (age > 120000) {
+
+      connection.innerText = "STALE DATA";
+      connection.className = "connection offline";
+
+      return;
+    }
+
+    connection.innerText = "● CONNECTED";
+    connection.className = "connection";
+
+  } catch (error) {
+
+    console.error(error);
+
+    connection.innerText = "● OFFLINE";
+    connection.className = "connection offline";
+  }
+}
+
+// ======================================
+// DOWNLOAD CSV
+// ======================================
+
+function downloadCSV() {
+
+  if (!latestFeeds.length) {
+
+    alert("No historical records available.");
+
+    return;
+  }
+
+  const header =
+    "Date,pH,TDS_ppm,Temperature_C";
+
+  const rows = latestFeeds.map(feed => {
+
+    return [
+      feed.created_at,
+      feed.field1,
+      feed.field2,
+      feed.field3
+    ].join(",");
+  });
+
+  const csv = [header, ...rows].join("\n");
+
+  const blob = new Blob(
+    [csv],
+    { type: "text/csv" }
+  );
+
+  const link = document.createElement("a");
+
+  link.href = URL.createObjectURL(blob);
+  link.download = "hydroponics_readings.csv";
+
+  link.click();
+
+  URL.revokeObjectURL(link.href);
+}
+
+// ======================================
+// START DASHBOARD
+// ======================================
+
+refreshData();
+
+setInterval(refreshData, 20000);
+
+</script>
+
+</body>
+</html>
