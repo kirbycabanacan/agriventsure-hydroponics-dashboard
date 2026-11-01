@@ -390,8 +390,8 @@ Download CSV
 </div>
 
 <div class="info-item">
-<div class="info-label">Historical Records Loaded</div>
-<div class="info-value" id="recordCount">0</div>
+<div class="info-label">Temperature Target</div>
+<div class="info-value">28-30°C</div>
 </div>
 
 <div class="info-item">
@@ -406,7 +406,7 @@ Download CSV
 
 <div class="info-item">
 <div class="info-label">TDS Target</div>
-<div class="info-value">560–840 ppm</div>
+<div class="info-value">1100–1300 ppm</div>
 </div>
 
 </div>
@@ -446,8 +446,11 @@ const TIME_ZONE = "Asia/Manila";
 const PH_MIN = 5.5;
 const PH_MAX = 6.5;
 
-const TDS_MIN = 560;
-const TDS_MAX = 840;
+const TDS_MIN = 1100;
+const TDS_MAX = 1300;
+
+const TEMP_MIN = 28;
+const TEMP_MAX = 30;
 
 // ======================================
 // SYSTEM SETTINGS
@@ -834,7 +837,7 @@ async function enableNotifications() {
 // SENSOR ALERTS
 // ======================================
 
-function checkAlerts(ph, tds) {
+function checkAlerts(ph, tds, temp) {
 
   let alerts = [];
 
@@ -845,6 +848,10 @@ function checkAlerts(ph, tds) {
   if (tds < TDS_MIN) alerts.push("TDS is LOW");
 
   if (tds > TDS_MAX) alerts.push("TDS is HIGH");
+
+  if (temp < TEMP_MIN) alerts.push("Temperature is LOW");
+
+  if (temp > TEMP_MAX) alerts.push("Temperature is HIGH");
 
   const state = alerts.join(" | ");
 
@@ -938,8 +945,10 @@ function updateDashboard(feed) {
 
   setStatus(
     "tempStatus",
-    "SENSOR DATA RECEIVED",
-    true
+    temp >= TEMP_MIN && temp <= TEMP_MAX
+      ? "OPTIMAL"
+      : temp < TEMP_MIN ? "LOW" : "HIGH",
+    temp >= TEMP_MIN && temp <= TEMP_MAX
   );
 
   lastReadingTimestamp = timestamp;
@@ -947,7 +956,7 @@ function updateDashboard(feed) {
   document.getElementById("lastUpdate").innerText =
     formatPhilippineTime(timestamp);
 
-  checkAlerts(ph, tds);
+  checkAlerts(ph, tds, temp);
 
   updateReadingAge();
 }
