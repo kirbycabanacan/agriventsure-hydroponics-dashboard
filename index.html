@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 
@@ -5,7 +6,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>Hydroponics Monitor</title>
+<title>AGRIVENTSURE Hydroponics Monitor</title>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -15,6 +16,7 @@
   --green: #16a34a;
   --red: #dc2626;
   --blue: #2563eb;
+  --orange: #ea580c;
   --bg: #f1f5f9;
   --card: #ffffff;
   --text: #0f172a;
@@ -71,6 +73,11 @@ h1 {
 .connection.offline {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.connection.stale {
+  background: #ffedd5;
+  color: #9a3412;
 }
 
 .grid {
@@ -141,8 +148,6 @@ h1 {
   background: #dcfce7;
   color: #166534;
 }
-
-/* ONE GRAPH PER ROW */
 
 .chart-grid {
   display: grid;
@@ -216,6 +221,7 @@ button.secondary {
   background: #f8fafc;
   padding: 15px;
   border-radius: 10px;
+  min-width: 0;
 }
 
 .info-label {
@@ -227,6 +233,7 @@ button.secondary {
 .info-value {
   font-weight: bold;
   font-size: 16px;
+  overflow-wrap: anywhere;
 }
 
 .footer {
@@ -350,7 +357,7 @@ Download CSV
 
 </div>
 
-<!-- HISTORICAL GRAPHS: ONE PER ROW -->
+<!-- HISTORICAL GRAPHS -->
 
 <div class="chart-grid">
 
@@ -395,8 +402,13 @@ Download CSV
 <div class="info-grid">
 
 <div class="info-item">
-<div class="info-label">Last Update</div>
+<div class="info-label">Last Sensor Update</div>
 <div class="info-value" id="lastUpdate">--</div>
+</div>
+
+<div class="info-item">
+<div class="info-label">Time Since Last Reading</div>
+<div class="info-value" id="readingAge">Waiting for data...</div>
 </div>
 
 <div class="info-item">
@@ -417,11 +429,6 @@ Download CSV
 <div class="info-item">
 <div class="info-label">TDS Target</div>
 <div class="info-value">560–840 ppm</div>
-</div>
-
-<div class="info-item">
-<div class="info-label">Automatic Refresh</div>
-<div class="info-value">Every 5 seconds</div>
 </div>
 
 </div>
@@ -460,21 +467,30 @@ const TDS_MIN = 560;
 const TDS_MAX = 840;
 
 // ======================================
-// SETTINGS
+// SYSTEM SETTINGS
 // ======================================
 
-// ThingSpeak maximum records per request.
+// Maximum ThingSpeak records per request.
 
 const HISTORY_LIMIT = 8000;
 
-// Automatic dashboard refresh.
+// Refresh dashboard every 20 seconds.
 
-const REFRESH_INTERVAL = 5000;
+const REFRESH_INTERVAL = 20000;
+
+// Mark sensor data stale after 3 minutes.
+
+const STALE_THRESHOLD = 180000;
+
+// ======================================
+// GLOBAL VARIABLES
+// ======================================
 
 let lastAlertState = "";
+
 let latestFeeds = [];
 
-// Prevent overlapping refresh requests.
+let lastReadingTimestamp = null;
 
 let isRefreshing = false;
 
@@ -573,6 +589,109 @@ function setStatus(id, message, good) {
 }
 
 // ======================================
+// CONNECTION STATUS
+// ======================================
+
+function updateConnectionStatus() {
+
+  const connection =
+    document.getElementById("connection");
+
+  if (!lastReadingTimestamp) {
+
+    connection.innerText = "● NO SENSOR DATA";
+    connection.className = "connection offline";
+
+    return;
+  }
+
+  const age =
+    Date.now() - lastReadingTimestamp;
+
+  if (age > STALE_THRESHOLD) {
+
+    connection.innerText = "● STALE DATA";
+    connection.className = "connection stale";
+
+  } else {
+
+    connection.innerText = "● CONNECTED";
+    connection.className = "connection";
+
+  }
+}
+
+// ======================================
+// LIVE READING AGE
+// ======================================
+
+function updateReadingAge() {
+
+  const element =
+    document.getElementById("readingAge");
+
+  if (!lastReadingTimestamp) {
+
+    element.innerText = "Waiting for data...";
+
+    updateConnectionStatus();
+
+    return;
+  }
+
+  let age =
+    Date.now() - lastReadingTimestamp;
+
+  // Avoid negative age if the device clock
+  // and ThingSpeak timestamp differ slightly.
+
+  age = Math.max(0, age);
+
+  const seconds = Math.floor(age / 1000);
+
+  if (seconds < 10) {
+
+    element.innerText = "Just now";
+
+  } else if (seconds < 60) {
+
+    element.innerText =
+      seconds + " seconds ago";
+
+  } else {
+
+    const minutes = Math.floor(seconds / 60);
+
+    const remainingSeconds = seconds % 60;
+
+    if (minutes < 60) {
+
+      element.innerText =
+        minutes + " minute" +
+        (minutes === 1 ? "" : "s") +
+        (remainingSeconds > 0 ?
+          " " + remainingSeconds + " sec" : "") +
+        " ago";
+
+    } else {
+
+      const hours = Math.floor(minutes / 60);
+
+      const remainingMinutes = minutes % 60;
+
+      element.innerText =
+        hours + " hour" +
+        (hours === 1 ? "" : "s") +
+        (remainingMinutes > 0 ?
+          " " + remainingMinutes + " min" : "") +
+        " ago";
+    }
+  }
+
+  updateConnectionStatus();
+}
+
+// ======================================
 // NOTIFICATIONS
 // ======================================
 
@@ -598,6 +717,10 @@ async function enableNotifications() {
   }
 }
 
+// ======================================
+// SENSOR ALERTS
+// ======================================
+
 function checkAlerts(ph, tds) {
 
   let alerts = [];
@@ -610,7 +733,8 @@ function checkAlerts(ph, tds) {
 
   const state = alerts.join(" | ");
 
-  const box = document.getElementById("alertBox");
+  const box =
+    document.getElementById("alertBox");
 
   if (alerts.length > 0) {
 
@@ -642,7 +766,7 @@ function checkAlerts(ph, tds) {
 }
 
 // ======================================
-// UPDATE LIVE VALUES
+// UPDATE LIVE SENSOR VALUES
 // ======================================
 
 function updateDashboard(feed) {
@@ -656,7 +780,16 @@ function updateDashboard(feed) {
     !Number.isFinite(tds) ||
     !Number.isFinite(temp)
   ) {
+
     throw new Error("Invalid sensor data");
+  }
+
+  const timestamp =
+    new Date(feed.created_at).getTime();
+
+  if (!Number.isFinite(timestamp)) {
+
+    throw new Error("Invalid sensor timestamp");
   }
 
   document.getElementById("ph").innerText =
@@ -690,12 +823,14 @@ function updateDashboard(feed) {
 
   checkAlerts(ph, tds);
 
-  const time = new Date(feed.created_at);
+  lastReadingTimestamp = timestamp;
 
   document.getElementById("lastUpdate").innerText =
-    time.toLocaleString("en-PH", {
+    new Date(timestamp).toLocaleString("en-PH", {
       timeZone: "Asia/Manila"
     });
+
+  updateReadingAge();
 }
 
 // ======================================
@@ -770,14 +905,13 @@ async function refreshData() {
 
   try {
 
-    // Request up to 8,000 historical records.
-
     let url =
       `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds.json?results=${HISTORY_LIMIT}`;
 
     if (READ_API_KEY) {
 
-      url += `&api_key=${encodeURIComponent(READ_API_KEY)}`;
+      url +=
+        `&api_key=${encodeURIComponent(READ_API_KEY)}`;
     }
 
     const response = await fetch(url, {
@@ -796,36 +930,18 @@ async function refreshData() {
       throw new Error("No sensor data available");
     }
 
-    // Save all records returned by ThingSpeak.
-
     latestFeeds = data.feeds;
 
-    // Latest reading.
+    // Latest sensor reading.
 
     const latest =
       latestFeeds[latestFeeds.length - 1];
 
     updateDashboard(latest);
 
-    // Update all historical graphs.
+    // Historical graphs.
 
     updateCharts(latestFeeds);
-
-    // Check if data is stale.
-
-    const age =
-      Date.now() - new Date(latest.created_at).getTime();
-
-    if (age > 120000) {
-
-      connection.innerText = "STALE DATA";
-      connection.className = "connection offline";
-
-      return;
-    }
-
-    connection.innerText = "● CONNECTED";
-    connection.className = "connection";
 
   } catch (error) {
 
@@ -881,7 +997,9 @@ function downloadCSV() {
   link.download = "hydroponics_readings.csv";
 
   document.body.appendChild(link);
+
   link.click();
+
   document.body.removeChild(link);
 
   URL.revokeObjectURL(objectURL);
@@ -891,11 +1009,20 @@ function downloadCSV() {
 // START DASHBOARD
 // ======================================
 
+// Initial cloud data retrieval.
+
 refreshData();
 
+// Retrieve new sensor data every 20 seconds.
+
 setInterval(refreshData, REFRESH_INTERVAL);
+
+// Update the displayed reading age every second.
+
+setInterval(updateReadingAge, 1000);
 
 </script>
 
 </body>
 </html>
+```
