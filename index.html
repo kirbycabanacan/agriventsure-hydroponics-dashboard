@@ -823,7 +823,21 @@ function updateDashboard(feed) {
 
   checkAlerts(ph, tds);
 
-  lastReadingTimestamp = timestamp;
+  // Only accept a timestamp newer than the previous reading.
+
+  if (
+    lastReadingTimestamp === null ||
+    timestamp > lastReadingTimestamp
+  ) {
+    lastReadingTimestamp = timestamp;
+  
+    document.getElementById("lastUpdate").innerText =
+      new Date(timestamp).toLocaleString("en-PH", {
+        timeZone: "Asia/Manila"
+      });
+  }
+  
+  updateReadingAge();
 
   document.getElementById("lastUpdate").innerText =
     new Date(timestamp).toLocaleString("en-PH", {
@@ -931,16 +945,22 @@ async function refreshData() {
     }
 
     latestFeeds = data.feeds;
-
-    // Latest sensor reading.
-
-    const latest =
-      latestFeeds[latestFeeds.length - 1];
-
+    
+    // Sort records by timestamp, oldest to newest.
+    
+    latestFeeds = data.feeds
+        .filter(feed => feed.created_at && !isNaN(Date.parse(feed.created_at)))
+        .sort((a, b) =>
+            Date.parse(a.created_at) - Date.parse(b.created_at)
+        );
+    
+    if (latestFeeds.length === 0) {
+        throw new Error("No valid sensor readings found.");
+    }
+    
+    const latest = latestFeeds[latestFeeds.length - 1];
+    
     updateDashboard(latest);
-
-    // Historical graphs.
-
     updateCharts(latestFeeds);
 
   } catch (error) {
