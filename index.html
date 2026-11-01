@@ -295,45 +295,33 @@ Waiting for sensor readings...
 <div class="grid">
 
 <div class="card">
-
 <div class="metric-title">pH Level</div>
-
 <div class="metric-value" id="ph">--</div>
-
 <div id="phStatus" class="status neutral">
 Waiting for data
 </div>
-
 </div>
 
 <div class="card">
-
 <div class="metric-title">TDS</div>
-
 <div class="metric-value">
 <span id="tds">--</span>
 <span class="metric-unit">ppm</span>
 </div>
-
 <div id="tdsStatus" class="status neutral">
 Waiting for data
 </div>
-
 </div>
 
 <div class="card">
-
 <div class="metric-title">Water Temperature</div>
-
 <div class="metric-value">
 <span id="temp">--</span>
 <span class="metric-unit">°C</span>
 </div>
-
 <div id="tempStatus" class="status neutral">
 Waiting for data
 </div>
-
 </div>
 
 </div>
@@ -361,33 +349,24 @@ Download CSV
 <div class="chart-grid">
 
 <div class="chart-card">
-
 <h3>Historical pH Readings</h3>
-
 <div class="chart-container">
 <canvas id="phChart"></canvas>
 </div>
-
 </div>
 
 <div class="chart-card">
-
 <h3>Historical TDS Readings</h3>
-
 <div class="chart-container">
 <canvas id="tdsChart"></canvas>
 </div>
-
 </div>
 
 <div class="chart-card">
-
 <h3>Water Temperature History</h3>
-
 <div class="chart-container">
 <canvas id="tempChart"></canvas>
 </div>
-
 </div>
 
 </div>
@@ -431,7 +410,6 @@ Download CSV
 </div>
 
 </div>
-
 </div>
 
 <div class="footer">
@@ -456,6 +434,12 @@ const CHANNEL_ID = "3561244";
 const READ_API_KEY = "";
 
 // ======================================
+// TIMEZONE
+// ======================================
+
+const TIME_ZONE = "Asia/Manila";
+
+// ======================================
 // TARGET RANGES
 // ======================================
 
@@ -469,15 +453,9 @@ const TDS_MAX = 840;
 // SYSTEM SETTINGS
 // ======================================
 
-// Maximum ThingSpeak records per request.
-
 const HISTORY_LIMIT = 8000;
 
-// Refresh dashboard every 20 seconds.
-
-const REFRESH_INTERVAL = 20000;
-
-// Mark sensor data stale after 3 minutes.
+const REFRESH_INTERVAL = 5000;
 
 const STALE_THRESHOLD = 180000;
 
@@ -494,42 +472,131 @@ let lastReadingTimestamp = null;
 let isRefreshing = false;
 
 // ======================================
+// TIMESTAMP FUNCTIONS
+// ======================================
+
+function getTimestamp(feed) {
+
+  const timestamp = Date.parse(feed.created_at);
+
+  return Number.isFinite(timestamp) ? timestamp : null;
+
+}
+
+function formatPhilippineTime(timestamp) {
+
+  return new Date(timestamp).toLocaleString("en-PH", {
+
+    timeZone: TIME_ZONE,
+
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+
+    hour12: true
+
+  });
+
+}
+
+// ======================================
+// VALIDATE SENSOR RECORD
+// ======================================
+
+function isValidFeed(feed) {
+
+  if (!feed || !feed.created_at) return false;
+
+  const ph = Number(feed.field1);
+  const tds = Number(feed.field2);
+  const temp = Number(feed.field3);
+
+  return (
+
+    feed.field1 !== null &&
+    feed.field1 !== "" &&
+
+    feed.field2 !== null &&
+    feed.field2 !== "" &&
+
+    feed.field3 !== null &&
+    feed.field3 !== "" &&
+
+    Number.isFinite(ph) &&
+    Number.isFinite(tds) &&
+    Number.isFinite(temp) &&
+
+    temp > -55 &&
+    temp <= 125 &&
+
+    getTimestamp(feed) !== null
+
+  );
+
+}
+
+// ======================================
 // CHART CONFIGURATION
 // ======================================
 
 function createChart(id, label, color) {
 
   return new Chart(
+
     document.getElementById(id),
+
     {
+
       type: "line",
 
       data: {
+
         labels: [],
 
         datasets: [{
+
           label: label,
+
           data: [],
+
           borderColor: color,
+
           backgroundColor: color + "22",
+
           fill: true,
+
           tension: 0.3,
+
           pointRadius: 0,
+
           pointHoverRadius: 5,
+
           borderWidth: 2
+
         }]
+
       },
 
       options: {
+
         responsive: true,
+
         maintainAspectRatio: false,
 
         interaction: {
+
           intersect: false,
+
           mode: "index"
+
         },
 
         plugins: {
+
           legend: {
             display: true
           },
@@ -537,31 +604,47 @@ function createChart(id, label, color) {
           tooltip: {
             enabled: true
           }
+
         },
 
         scales: {
 
           x: {
+
             ticks: {
+
               maxTicksLimit: 10,
+
               maxRotation: 45,
+
               minRotation: 0
+
             },
 
             title: {
+
               display: true,
+
               text: "Date and Time"
+
             }
+
           },
 
           y: {
+
             beginAtZero: false
+
           }
 
         }
+
       }
+
     }
+
   );
+
 }
 
 const phChart =
@@ -585,6 +668,7 @@ function setStatus(id, message, good) {
 
   element.className =
     "status " + (good ? "good" : "bad");
+
 }
 
 // ======================================
@@ -596,32 +680,42 @@ function updateConnectionStatus() {
   const connection =
     document.getElementById("connection");
 
-  if (!lastReadingTimestamp) {
+  if (lastReadingTimestamp === null) {
 
     connection.innerText = "● NO SENSOR DATA";
+
     connection.className = "connection offline";
 
     return;
+
   }
 
-  const age =
-    Date.now() - lastReadingTimestamp;
+  const age = Date.now() - lastReadingTimestamp;
 
   if (age > STALE_THRESHOLD) {
 
     connection.innerText = "● STALE DATA";
+
     connection.className = "connection stale";
+
+  } else if (age < -60000) {
+
+    connection.innerText = "● CLOCK ERROR";
+
+    connection.className = "connection offline";
 
   } else {
 
     connection.innerText = "● CONNECTED";
+
     connection.className = "connection";
 
   }
+
 }
 
 // ======================================
-// LIVE READING AGE
+// READING AGE
 // ======================================
 
 function updateReadingAge() {
@@ -629,22 +723,27 @@ function updateReadingAge() {
   const element =
     document.getElementById("readingAge");
 
-  if (!lastReadingTimestamp) {
+  if (lastReadingTimestamp === null) {
 
     element.innerText = "Waiting for data...";
 
     updateConnectionStatus();
 
     return;
+
   }
 
-  let age =
-    Date.now() - lastReadingTimestamp;
+  let age = Date.now() - lastReadingTimestamp;
 
-  // Avoid negative age if the device clock
-  // and ThingSpeak timestamp differ slightly.
+  if (age < 0) {
 
-  age = Math.max(0, age);
+    element.innerText = "Timestamp is in the future";
+
+    updateConnectionStatus();
+
+    return;
+
+  }
 
   const seconds = Math.floor(age / 1000);
 
@@ -654,8 +753,7 @@ function updateReadingAge() {
 
   } else if (seconds < 60) {
 
-    element.innerText =
-      seconds + " seconds ago";
+    element.innerText = seconds + " seconds ago";
 
   } else {
 
@@ -666,10 +764,15 @@ function updateReadingAge() {
     if (minutes < 60) {
 
       element.innerText =
+
         minutes + " minute" +
+
         (minutes === 1 ? "" : "s") +
-        (remainingSeconds > 0 ?
-          " " + remainingSeconds + " sec" : "") +
+
+        (remainingSeconds > 0
+          ? " " + remainingSeconds + " sec"
+          : "") +
+
         " ago";
 
     } else {
@@ -679,15 +782,23 @@ function updateReadingAge() {
       const remainingMinutes = minutes % 60;
 
       element.innerText =
+
         hours + " hour" +
+
         (hours === 1 ? "" : "s") +
-        (remainingMinutes > 0 ?
-          " " + remainingMinutes + " min" : "") +
+
+        (remainingMinutes > 0
+          ? " " + remainingMinutes + " min"
+          : "") +
+
         " ago";
+
     }
+
   }
 
   updateConnectionStatus();
+
 }
 
 // ======================================
@@ -701,6 +812,7 @@ async function enableNotifications() {
     alert("Browser notifications are not supported.");
 
     return;
+
   }
 
   const permission =
@@ -713,7 +825,9 @@ async function enableNotifications() {
   } else {
 
     alert("Notification permission was not granted.");
+
   }
+
 }
 
 // ======================================
@@ -725,9 +839,11 @@ function checkAlerts(ph, tds) {
   let alerts = [];
 
   if (ph < PH_MIN) alerts.push("pH is LOW");
+
   if (ph > PH_MAX) alerts.push("pH is HIGH");
 
   if (tds < TDS_MIN) alerts.push("TDS is LOW");
+
   if (tds > TDS_MAX) alerts.push("TDS is HIGH");
 
   const state = alerts.join(" | ");
@@ -747,21 +863,31 @@ function checkAlerts(ph, tds) {
 
     box.innerText =
       "Water readings are within target ranges.";
+
   }
 
   if (
+
     state !== lastAlertState &&
+
     state !== "" &&
+
     "Notification" in window &&
+
     Notification.permission === "granted"
+
   ) {
 
     new Notification("Hydroponics Water Alert", {
+
       body: state
+
     });
+
   }
 
   lastAlertState = state;
+
 }
 
 // ======================================
@@ -770,47 +896,43 @@ function checkAlerts(ph, tds) {
 
 function updateDashboard(feed) {
 
+  if (!isValidFeed(feed)) {
+    throw new Error("Invalid latest sensor reading");
+  }
+
+  const timestamp = getTimestamp(feed);
+
+  // Never allow older readings to overwrite newer readings
+  if (
+    lastReadingTimestamp !== null &&
+    timestamp < lastReadingTimestamp
+  ) {
+    console.warn("Ignored older sensor reading:", feed);
+    return;
+  }
+
   const ph = Number(feed.field1);
   const tds = Number(feed.field2);
   const temp = Number(feed.field3);
 
-  if (
-    !Number.isFinite(ph) ||
-    !Number.isFinite(tds) ||
-    !Number.isFinite(temp)
-  ) {
-
-    throw new Error("Invalid sensor data");
-  }
-
-  const timestamp =
-    new Date(feed.created_at).getTime();
-
-  if (!Number.isFinite(timestamp)) {
-
-    throw new Error("Invalid sensor timestamp");
-  }
-
-  document.getElementById("ph").innerText =
-    ph.toFixed(2);
-
-  document.getElementById("tds").innerText =
-    tds.toFixed(0);
-
-  document.getElementById("temp").innerText =
-    temp.toFixed(1);
+  // Update live values
+  document.getElementById("ph").innerText = ph.toFixed(2);
+  document.getElementById("tds").innerText = tds.toFixed(0);
+  document.getElementById("temp").innerText = temp.toFixed(1);
 
   setStatus(
     "phStatus",
-    ph >= PH_MIN && ph <= PH_MAX ?
-    "OPTIMAL" : ph < PH_MIN ? "LOW" : "HIGH",
+    ph >= PH_MIN && ph <= PH_MAX
+      ? "OPTIMAL"
+      : ph < PH_MIN ? "LOW" : "HIGH",
     ph >= PH_MIN && ph <= PH_MAX
   );
 
   setStatus(
     "tdsStatus",
-    tds >= TDS_MIN && tds <= TDS_MAX ?
-    "OPTIMAL" : tds < TDS_MIN ? "LOW" : "HIGH",
+    tds >= TDS_MIN && tds <= TDS_MAX
+      ? "OPTIMAL"
+      : tds < TDS_MIN ? "LOW" : "HIGH",
     tds >= TDS_MIN && tds <= TDS_MAX
   );
 
@@ -820,28 +942,12 @@ function updateDashboard(feed) {
     true
   );
 
-  checkAlerts(ph, tds);
-
-  // Only accept a timestamp newer than the previous reading.
-
-  if (
-    lastReadingTimestamp === null ||
-    timestamp > lastReadingTimestamp
-  ) {
-    lastReadingTimestamp = timestamp;
-  
-    document.getElementById("lastUpdate").innerText =
-      new Date(timestamp).toLocaleString("en-PH", {
-        timeZone: "Asia/Manila"
-      });
-  }
-  
-  updateReadingAge();
+  lastReadingTimestamp = timestamp;
 
   document.getElementById("lastUpdate").innerText =
-    new Date(timestamp).toLocaleString("en-PH", {
-      timeZone: "Asia/Manila"
-    });
+    formatPhilippineTime(timestamp);
+
+  checkAlerts(ph, tds);
 
   updateReadingAge();
 }
@@ -852,55 +958,74 @@ function updateDashboard(feed) {
 
 function updateCharts(feeds) {
 
-  const validFeeds = feeds.filter(feed => {
+  // Filter valid records
 
-    const ph = Number(feed.field1);
-    const tds = Number(feed.field2);
-    const temp = Number(feed.field3);
+  const validFeeds = feeds.filter(isValidFeed);
 
-    return (
-      Number.isFinite(ph) &&
-      Number.isFinite(tds) &&
-      Number.isFinite(temp) &&
-      temp > -55 &&
-      temp <= 125 &&
-      Boolean(feed.created_at)
-    );
+  // Sort oldest to newest
+
+  validFeeds.sort((a, b) => {
+
+    return getTimestamp(a) - getTimestamp(b);
 
   });
+
+  // Build labels
 
   const labels = validFeeds.map(feed => {
 
-    return new Date(feed.created_at).toLocaleString(
+    return new Date(getTimestamp(feed)).toLocaleString(
+
       "en-PH",
+
       {
-        timeZone: "Asia/Manila",
+
+        timeZone: TIME_ZONE,
+
         month: "short",
+
         day: "numeric",
+
         year: "2-digit",
+
         hour: "2-digit",
-        minute: "2-digit"
+
+        minute: "2-digit",
+
+        hour12: true
+
       }
+
     );
 
   });
+
+  // Update charts
 
   function updateChart(chart, field) {
 
     chart.data.labels = labels;
 
     chart.data.datasets[0].data =
+
       validFeeds.map(feed => Number(feed[field]));
 
     chart.update("none");
+
   }
 
   updateChart(phChart, "field1");
+
   updateChart(tdsChart, "field2");
+
   updateChart(tempChart, "field3");
 
+  // Record count
+
   document.getElementById("recordCount").innerText =
+
     validFeeds.length.toLocaleString();
+
 }
 
 // ======================================
@@ -918,53 +1043,111 @@ async function refreshData() {
 
   try {
 
-    let url =
-      `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds.json?results=${HISTORY_LIMIT}`;
+    const apiKey = READ_API_KEY
+      ? `&api_key=${encodeURIComponent(READ_API_KEY)}`
+      : "";
 
-    if (READ_API_KEY) {
+    // ==================================
+    // 1. GET LATEST SENSOR READING
+    // ==================================
 
-      url +=
-        `&api_key=${encodeURIComponent(READ_API_KEY)}`;
-    }
+    const latestURL =
+      `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds/last.json?${apiKey ? apiKey.substring(1) + "&" : ""}_=${Date.now()}`;
 
-    const response = await fetch(url, {
+    const latestResponse = await fetch(latestURL, {
       cache: "no-store"
     });
 
-    if (!response.ok) {
-
-      throw new Error("Cloud connection failed");
+    if (!latestResponse.ok) {
+      throw new Error("Latest reading request failed");
     }
 
-    const data = await response.json();
+    const latestFeed = await latestResponse.json();
 
-    if (!data.feeds || data.feeds.length === 0) {
-
-      throw new Error("No sensor data available");
+    if (!isValidFeed(latestFeed)) {
+      throw new Error("Invalid latest ThingSpeak reading");
     }
 
-    latestFeeds = data.feeds;
-    
-    // Sort records by timestamp, oldest to newest.
-    
-    latestFeeds = data.feeds
-        .filter(feed => feed.created_at && !isNaN(Date.parse(feed.created_at)))
-        .sort((a, b) =>
-            Date.parse(a.created_at) - Date.parse(b.created_at)
-        );
-    
+    // ==================================
+    // 2. GET HISTORICAL RECORDS
+    // ==================================
+
+    const historyURL =
+      `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds.json?results=${HISTORY_LIMIT}${apiKey}&_=${Date.now()}`;
+
+    const historyResponse = await fetch(historyURL, {
+      cache: "no-store"
+    });
+
+    if (!historyResponse.ok) {
+      throw new Error("Historical data request failed");
+    }
+
+    const historyData = await historyResponse.json();
+
+    if (!historyData.feeds || historyData.feeds.length === 0) {
+      throw new Error("No historical records available");
+    }
+
+    // ==================================
+    // 3. VALIDATE HISTORICAL RECORDS
+    // ==================================
+
+    latestFeeds = historyData.feeds.filter(isValidFeed);
+
     if (latestFeeds.length === 0) {
-        throw new Error("No valid sensor readings found.");
+      throw new Error("No valid historical readings");
     }
-    
-    const latest = latestFeeds[latestFeeds.length - 1];
-    
-    updateDashboard(latest);
+
+    // ==================================
+    // 4. SORT OLDEST TO NEWEST
+    // ==================================
+
+    latestFeeds.sort((a, b) =>
+      getTimestamp(a) - getTimestamp(b)
+    );
+
+    // ==================================
+    // 5. UPDATE LIVE DASHBOARD
+    // ==================================
+
+    updateDashboard(latestFeed);
+
+    // ==================================
+    // 6. UPDATE HISTORICAL CHARTS
+    // ==================================
+
     updateCharts(latestFeeds);
+
+    // ==================================
+    // 7. DEBUG INFORMATION
+    // ==================================
+
+    console.log("LATEST FEED ENDPOINT:", latestFeed);
+
+    console.log(
+      "LATEST FEED PHILIPPINE TIME:",
+      formatPhilippineTime(getTimestamp(latestFeed))
+    );
+
+    console.log(
+      "HISTORICAL OLDEST:",
+      latestFeeds[0]
+    );
+
+    console.log(
+      "HISTORICAL NEWEST:",
+      latestFeeds[latestFeeds.length - 1]
+    );
+
+    console.log(
+      "HISTORICAL RECORD COUNT:",
+      latestFeeds.length
+    );
 
   } catch (error) {
 
-    console.error(error);
+    console.error("Dashboard error:", error);
 
     connection.innerText = "● OFFLINE";
     connection.className = "connection offline";
@@ -972,7 +1155,9 @@ async function refreshData() {
   } finally {
 
     isRefreshing = false;
+
   }
+
 }
 
 // ======================================
@@ -986,26 +1171,45 @@ function downloadCSV() {
     alert("No historical records available.");
 
     return;
+
   }
 
+  // Sort CSV oldest to newest
+
+  const sortedFeeds = [...latestFeeds].sort((a, b) => {
+
+    return getTimestamp(a) - getTimestamp(b);
+
+  });
+
   const header =
+
     "Date,pH,TDS_ppm,Temperature_C";
 
-  const rows = latestFeeds.map(feed => {
+  const rows = sortedFeeds.map(feed => {
 
     return [
+
       feed.created_at,
+
       feed.field1,
+
       feed.field2,
+
       feed.field3
+
     ].join(",");
+
   });
 
   const csv = [header, ...rows].join("\n");
 
   const blob = new Blob(
+
     [csv],
+
     { type: "text/csv;charset=utf-8;" }
+
   );
 
   const link = document.createElement("a");
@@ -1013,7 +1217,8 @@ function downloadCSV() {
   const objectURL = URL.createObjectURL(blob);
 
   link.href = objectURL;
-  link.download = "hydroponics_readings.csv";
+
+  link.download = "AGRIVENTSURE_hydroponics_readings.csv";
 
   document.body.appendChild(link);
 
@@ -1022,21 +1227,22 @@ function downloadCSV() {
   document.body.removeChild(link);
 
   URL.revokeObjectURL(objectURL);
+
 }
 
 // ======================================
 // START DASHBOARD
 // ======================================
 
-// Initial cloud data retrieval.
+// Initial data retrieval
 
 refreshData();
 
-// Retrieve new sensor data every 20 seconds.
+// Refresh every 20 seconds
 
 setInterval(refreshData, REFRESH_INTERVAL);
 
-// Update the displayed reading age every second.
+// Update reading age every second
 
 setInterval(updateReadingAge, 1000);
 
